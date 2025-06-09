@@ -1,7 +1,8 @@
 #include <graphics.h>
 #include <iostream>
 #include <vector>
-#include <windows.h>  
+#include <algorithm>
+#include <windows.h>
 #include <mmsystem.h> // 添加多媒体库以支持音频播放
 #include <ctime> // 添加时间头文件以使用 time 函数
 #pragma comment(lib, "winmm.lib")  // 链接 Windows 多媒体库
@@ -34,6 +35,19 @@ struct Mogu {
     int minX, maxX; // 移动范围
     IMAGE imgLeft, imgLeftMask;
     IMAGE imgRight, imgRightMask;
+};
+
+// 定义乌鸦结构体
+struct Wuya {
+    int x, y;
+    int width, height;
+    int moveSpeed;
+    bool facingRight;
+    int minX, maxX; // 移动范围
+    bool isNeutral;   // 是否为中立状态（白天）
+    IMAGE imgDaytime, imgDaytimeMask;     // 白天图片
+    IMAGE imgNightLeft, imgNightLeftMask; // 夜晚左向图片
+    IMAGE imgNightRight, imgNightRightMask; // 夜晚右向图片
 };
 
 void PlayCharacterVoice() {
@@ -96,46 +110,87 @@ void DrawRestartButton(int x, int y, int size, bool isHovered) {
 }
 
 // 获取最近的重生点
-void GetNearestRespawnPoint(int currentX, int currentY, bool facingRight, int& respawnX, int& respawnY) {
+void GetNearestRespawnPoint(int currentX, int currentY, bool facingRight, int& respawnX, int& respawnY, int currentLevel) {
     // 定义重生点列表
     struct RespawnPoint {
         int x, y;
     };
-    
-    RespawnPoint respawnPoints[] = {
-        {50, 340},      // 起始点
-        {220, 340},     // 第一个坑前
-        {420, 340},     // 第二个坑前
-        {680, 340}      // 最后一段
-    };
-    
-    // 根据朝向选择重生点
-    if (facingRight) {
-        // 如果角色朝右，找左边最近的重生点
-        int selectedX = 50;  // 默认使用最左边的重生点
-        int selectedY = 340;
-        
-        for (const auto& point : respawnPoints) {
-            if (point.x < currentX && point.x > selectedX) {
-                selectedX = point.x;
-                selectedY = point.y;
+
+    if (currentLevel == 1) {
+        // 第一关重生点
+        RespawnPoint respawnPoints[] = {
+            {50, 340},      // 起始点
+            {220, 340},     // 第一个坑前
+            {420, 340},     // 第二个坑前
+            {680, 340}      // 最后一段
+        };
+
+        // 根据朝向选择重生点
+        if (facingRight) {
+            // 如果角色朝右，找左边最近的重生点
+            int selectedX = 50;  // 默认使用最左边的重生点
+            int selectedY = 340;
+
+            for (const auto& point : respawnPoints) {
+                if (point.x < currentX && point.x > selectedX) {
+                    selectedX = point.x;
+                    selectedY = point.y;
+                }
             }
-        }
-        respawnX = selectedX;
-        respawnY = selectedY;
-    } else {
-        // 如果角色朝左，找右边最近的重生点
-        int selectedX = 680;  // 默认使用最右边的重生点
-        int selectedY = 340;
-        
-        for (const auto& point : respawnPoints) {
-            if (point.x > currentX && point.x < selectedX) {
-                selectedX = point.x;
-                selectedY = point.y;
+            respawnX = selectedX;
+            respawnY = selectedY;
+        } else {
+            // 如果角色朝左，找右边最近的重生点
+            int selectedX = 680;  // 默认使用最右边的重生点
+            int selectedY = 340;
+
+            for (const auto& point : respawnPoints) {
+                if (point.x > currentX && point.x < selectedX) {
+                    selectedX = point.x;
+                    selectedY = point.y;
+                }
             }
+            respawnX = selectedX;
+            respawnY = selectedY;
         }
-        respawnX = selectedX;
-        respawnY = selectedY;
+    } else if (currentLevel == 2) {
+        // 第二关重生点（避开障碍物）
+        RespawnPoint respawnPoints[] = {
+            {53, 390},      // 起始点
+            {200, 390},     // 小凸起前
+            {450, 390},     // 竖台阶前
+            {600, 390},     // 乌鸦区域前
+            {850, 390}      // 右侧区域
+        };
+
+        // 根据朝向选择重生点
+        if (facingRight) {
+            // 如果角色朝右，找左边最近的重生点
+            int selectedX = 53;  // 默认使用最左边的重生点
+            int selectedY = 390;
+
+            for (const auto& point : respawnPoints) {
+                if (point.x < currentX && point.x > selectedX) {
+                    selectedX = point.x;
+                    selectedY = point.y;
+                }
+            }
+            respawnX = selectedX;
+            respawnY = selectedY;
+        } else {
+            // 如果角色朝左，找右边最近的重生点
+            int selectedX = 850;  // 默认使用最右边的重生点
+            int selectedY = 390;
+
+            for (const auto& point : respawnPoints) {
+                if (point.x > currentX && point.x < selectedX) {
+                    selectedX = point.x;
+                    selectedY = point.y;
+                }
+            }
+            respawnX = selectedX;
+            respawnY = selectedY;
+        }
     }
 }
 
@@ -156,8 +211,6 @@ int main() {
     bool isInvincible = false;  // 死亡后的短暂无敌时间
     int invincibleTimer = 0;    // 无敌时间计时器
     const int INVINCIBLE_DURATION = 100;  // 无敌持续时间（约2秒）
-    bool gameOver = false;      // 添加游戏结束标志
-    bool shouldRestart = false; // 添加重新开始标志
     IMAGE heartFull, heartEmpty, heartMask;
     loadimage(&heartFull, "D:\\Cyber-Space\\c++\\Gemshin-games\\pictures\\heart_full.png", 30, 30);
     loadimage(&heartEmpty, "D:\\Cyber-Space\\c++\\Gemshin-games\\pictures\\heart_empty.png", 30, 30);
@@ -236,28 +289,37 @@ int main() {
     // 游戏开始时只播放背景音乐，移除角色语音
     PlayBackgroundMusic();  // 只播放背景音乐
 
-    // 加载白天和黑夜背景图片
+    // 加载白天和黑夜背景图片（支持多关卡）
     IMAGE daytime, evening;
+    IMAGE daytime2, evening2;  // 第二关背景
     loadimage(&daytime, "D:\\Cyber-Space\\c++\\Gemshin-games\\pictures\\daytime.png", width, height);
     loadimage(&evening, "D:\\Cyber-Space\\c++\\Gemshin-games\\pictures\\evening.png", width, height);
+    loadimage(&daytime2, "D:\\Cyber-Space\\c++\\Gemshin-games\\pictures\\2\\daytime.png", width, height);
+    loadimage(&evening2, "D:\\Cyber-Space\\c++\\Gemshin-games\\pictures\\2\\evening.png", width, height);
 
     // 加载角色图片和对应的掩码图片
     IMAGE characterLeft, characterLeftMask;
     IMAGE characterRight, characterRightMask;
     IMAGE niaoju, niaoujuMask;
     IMAGE tofu, tofuMask;
+
+    // 加载第二关专用的游戏元素
+    IMAGE gouyu, gouyuMask;
+    IMAGE jiguanDay, jiguanNight;
     
     // 加载原始图像
     loadimage(&characterLeft, "D:\\Cyber-Space\\c++\\Gemshin-games\\pictures\\aqiao-l.png", 69, 69);
     loadimage(&characterRight, "D:\\Cyber-Space\\c++\\Gemshin-games\\pictures\\aqiao-r.png", 69, 69);
     loadimage(&niaoju, "D:\\Cyber-Space\\c++\\Gemshin-games\\pictures\\niaoju.png", 50, 50);
     loadimage(&tofu, "D:\\Cyber-Space\\c++\\Gemshin-games\\pictures\\tofu.png", 50, 50);
+    loadimage(&gouyu, "D:\\Cyber-Space\\c++\\Gemshin-games\\pictures\\gouyu.png", 30, 30);
     
     // 加载掩码图像
     loadimage(&characterLeftMask, "D:\\Cyber-Space\\c++\\Gemshin-games\\pictures\\aqiao-l-mask.png", 69, 69);
     loadimage(&characterRightMask, "D:\\Cyber-Space\\c++\\Gemshin-games\\pictures\\aqiao-r-mask.png", 69, 69);
     loadimage(&niaoujuMask, "D:\\Cyber-Space\\c++\\Gemshin-games\\pictures\\niaoju-mask.png", 50, 50);
     loadimage(&tofuMask, "D:\\Cyber-Space\\c++\\Gemshin-games\\pictures\\tofu-mask.png", 50, 50);
+    loadimage(&gouyuMask, "D:\\Cyber-Space\\c++\\Gemshin-games\\pictures\\gouyu-night-mask.png", 30, 30);
 
     // 加载蘑菇怪图片
     IMAGE moguLeft, moguLeftMask, moguRight, moguRightMask;
@@ -266,22 +328,39 @@ int main() {
     loadimage(&moguRight, "D:\\Cyber-Space\\c++\\Gemshin-games\\pictures\\mogu-r.png", 50, 50);
     loadimage(&moguRightMask, "D:\\Cyber-Space\\c++\\Gemshin-games\\pictures\\mogu-r-mask.png", 50, 50);
 
+    // 加载乌鸦图片
+    IMAGE wuyaDaytime, wuyaDaytimeMask;
+    IMAGE wuyaNightLeft, wuyaNightLeftMask, wuyaNightRight, wuyaNightRightMask;
+    loadimage(&wuyaDaytime, "D:\\Cyber-Space\\c++\\Gemshin-games\\pictures\\wuya-daytime.png", 50, 50);
+    loadimage(&wuyaDaytimeMask, "D:\\Cyber-Space\\c++\\Gemshin-games\\pictures\\wuya--daytime-mask.png", 50, 50);
+    loadimage(&wuyaNightLeft, "D:\\Cyber-Space\\c++\\Gemshin-games\\pictures\\wuya-night-l.png", 50, 50);
+    loadimage(&wuyaNightLeftMask, "D:\\Cyber-Space\\c++\\Gemshin-games\\pictures\\wuya-night-l-mask.png", 50, 50);
+    loadimage(&wuyaNightRight, "D:\\Cyber-Space\\c++\\Gemshin-games\\pictures\\wuya-night-r.png", 50, 50);
+    loadimage(&wuyaNightRightMask, "D:\\Cyber-Space\\c++\\Gemshin-games\\pictures\\wuya-night-r-mask.png", 50, 50);
+
     // 检查图像是否成功加载
     if (characterRight.getwidth() == 0 || characterRightMask.getwidth() == 0 ||
         characterLeft.getwidth() == 0 || characterLeftMask.getwidth() == 0 ||
         niaoju.getwidth() == 0 || niaoujuMask.getwidth() == 0 ||
         tofu.getwidth() == 0 || tofuMask.getwidth() == 0 ||
+        gouyu.getwidth() == 0 || gouyuMask.getwidth() == 0 || // 检查勾玉图片
         moguLeft.getwidth() == 0 || moguLeftMask.getwidth() == 0 || // 检查蘑菇怪图片
-        moguRight.getwidth() == 0 || moguRightMask.getwidth() == 0) {
+        moguRight.getwidth() == 0 || moguRightMask.getwidth() == 0 ||
+        wuyaDaytime.getwidth() == 0 || wuyaDaytimeMask.getwidth() == 0 || // 检查乌鸦图片
+        wuyaNightLeft.getwidth() == 0 || wuyaNightLeftMask.getwidth() == 0 ||
+        wuyaNightRight.getwidth() == 0 || wuyaNightRightMask.getwidth() == 0) {
         std::cout << "图像加载失败！请检查路径。" << std::endl;
         closegraph();
         return 1;
     }
 
-    // 初始背景为白天
+    // 添加关卡系统
+    int currentLevel = 1;       // 当前关卡
     bool isDaytime = true;
     bool hasEatenTofu = false;  // 添加变量跟踪豆腐是否被吃掉
+    bool hasEatenGouyu = false; // 是否吃到勾玉（第二关）
     bool showFKey = false;      // 是否显示F键提示
+    bool gateOpen = false;      // 机关门是否打开
 
     // 角色初始位置和状态
     int characterX = 50;
@@ -289,14 +368,15 @@ int main() {
     int moveSpeed = 5;
     int jumpSpeed = 12;  // 跳跃初始速度
     int gravity = 1;     // 重力
-    int initialY = 342; // 角色初始y坐标作为地面高度
+    int initialY = 342; // 第一关地面高度
+    int initialY2 = 390; // 第二关地面高度
     bool facingRight = true;
     bool isJumping = false;
     int jumpHeight = 0;
     bool onPlatform = false;
 
-    // 初始化蘑菇怪
-    Mogu mogu = {
+    // 初始化第一关的蘑菇怪
+    Mogu mogu1_1 = {
         630, 399 - 50, // 初始位置在 (485, 399) 的上方，因为蘑菇怪有高度
         50, 50,       // 宽高
         2,            // 移动速度
@@ -305,8 +385,8 @@ int main() {
         moguLeft, moguLeftMask,
         moguRight, moguRightMask
     };
-    
-    Mogu mogu2 = {
+
+    Mogu mogu1_2 = {
         1025, 399 - 50, // 初始位置在 (1025, 399) 的上方
         50, 50,       // 宽高
         2,            // 移动速度
@@ -316,23 +396,91 @@ int main() {
         moguRight, moguRightMask
     };
 
-    // 在加载图片后，游戏开始前定义障碍物和死亡区域
-    std::vector<Obstacle> obstacles = {
+
+    // 当前关卡使用的蘑菇怪（动态切换）
+    Mogu mogu, mogu2;
+
+    // 初始化第二关的第一个乌鸦（位于小凸起2和竖台阶之间）
+    Wuya wuya2_1 = {
+        650, 385 - 50,  // 初始位置：x=650（在小凸起2和竖台阶之间），y=390-50（地面上方）
+        40, 40,         // 宽高
+        1,              // 移动速度（夜晚时）
+        false,          // 初始朝向左（朝向玩家方向）
+        550, 750,       // 移动范围（在小凸起2和竖台阶之间的区域）
+        true,           // 初始为中立状态（白天）
+        wuyaDaytime, wuyaDaytimeMask,           // 白天图片
+        wuyaNightLeft, wuyaNightLeftMask,      // 夜晚左向图片
+        wuyaNightRight, wuyaNightRightMask     // 夜晚右向图片
+    };
+
+    // 初始化第二关的第二个乌鸦（位于第三个凸起右侧）
+    Wuya wuya2_2 = {
+        750, 240 - 50,  // 初始位置：x=750（在第三个凸起右侧），y=235-50（第三个凸起上方）
+        40, 40,         // 宽高
+        1,              // 移动速度（夜晚时）
+        true,           // 初始朝向右
+        750, 1000,       // 移动范围（第三个凸起右侧区域）
+        true,           // 初始为中立状态（白天）
+        wuyaDaytime, wuyaDaytimeMask,           // 白天图片
+        wuyaNightLeft, wuyaNightLeftMask,      // 夜晚左向图片
+        wuyaNightRight, wuyaNightRightMask     // 夜晚右向图片
+    };
+
+    // 当前关卡使用的乌鸦
+    Wuya wuya, wuya2;
+
+    // 定义第一关的障碍物和区域
+    std::vector<Obstacle> obstacles1 = {
         {174, 300, 47, 94, RGB(255, 192, 203)},  // 左边高墙
         {820, 320, 190, 30, RGB(255, 192, 203)}    // 右边二楼台阶
     };
-
-    // 定义死亡区域（黑夜模式下的坑）
-    std::vector<DeathZone> deathZones = {
+    std::vector<DeathZone> deathZones1 = {
         {316, 424, 50, 25},   // 第一个坑
         {485, 424, 145, 25}    // 第二个坑
     };
-
-    // 定义透明区域（黑夜模式下可以穿过的区域）
-    std::vector<TransparentZone> transparentZones = {
+    std::vector<TransparentZone> transparentZones1 = {
         {316, 399, 50, 25},   // 第一个坑上方的透明区域
         {485, 399, 145, 25}    // 第二个坑上方的透明区域
     };
+
+    // 定义第二关的障碍物和区域
+    std::vector<Obstacle> obstacles2_daytime = {
+        {149, 418, 25, 27, RGB(255, 192, 203)},  // 小凸起（白天黑夜都存在）
+        {127, 275, 95, 23, RGB(255, 192, 203)},  // 台阶2：位置(127,275)，长度95，宽度23（只白天存在）
+        {56, 200, 100, 14, RGB(255, 192, 203)},  // 台阶3：位置(56,200)，长度100，宽度14（只白天存在）
+        {525, 380, 360, 10, RGB(255, 192, 203)}, // 右侧台阶（白天黑夜都存在）
+        {810, 380, 200, 10, RGB(255, 192, 203)}, // 右侧台阶（只白天存在）
+        {770, 352, 25, 27, RGB(255, 192, 203)},  // 小凸起2（白天黑夜都存在）
+        {700, 235, 25, 27, RGB(255, 192, 203)},  // 小凸起3（白天黑夜都存在）
+        {525, 285, 29, 94, RGB(255, 192, 203)}, // 右侧竖台阶（白天黑夜都存在）
+        {490, 285, 65, 10, RGB(255, 192, 203)}, // 右侧台阶2（只白天存在）
+        {652, 260, 355, 10, RGB(255, 192, 203)}, // 右侧台阶3（白天黑夜都存在）
+        {895, 150, 120, 15, RGB(255, 192, 203)}, // 右侧台阶4（白天黑夜都存在）
+        {896, 80, 15, 85, RGB(255, 192, 203)}, // 鸟居左侧竖障碍（白天黑夜都存在，需要勾玉才能通过）
+    };
+    std::vector<Obstacle> obstacles2_nighttime = {
+        {149, 418, 25, 27, RGB(255, 192, 203)},  // 小凸起（白天黑夜都存在）
+        {770, 352, 25, 27, RGB(255, 192, 203)},  // 小凸起2（白天黑夜都存在）
+        {700, 235, 25, 27, RGB(255, 192, 203)},  // 小凸起3（白天黑夜都存在）
+        {525, 380, 360, 10, RGB(255, 192, 203)}, // 右侧台阶（白天黑夜都存在）
+        {525, 285, 29, 94, RGB(255, 192, 203)}, // 右侧竖台阶（白天黑夜都存在）
+        {490, 285, 65, 10, RGB(255, 192, 203)}, // 右侧台阶2（白天黑夜都存在）
+        {652, 260, 355, 10, RGB(255, 192, 203)}, // 右侧台阶3（白天黑夜都存在）
+        {895, 150, 120, 15, RGB(255, 192, 203)}, // 右侧台阶4（白天黑夜都存在）
+        {896, 80, 15, 85, RGB(255, 192, 203)}, // 鸟居左侧竖障碍（白天黑夜都存在，需要勾玉才能通过）
+        {220, 337, 95, 23, RGB(255, 192, 203)},  // 台阶1只黑夜存在）
+    };
+    std::vector<DeathZone> deathZones2 = {
+        // 第二关暂时没有死亡区域
+    };
+    std::vector<TransparentZone> transparentZones2 = {
+        // 第二关暂时没有透明区域
+    };
+
+    // 当前关卡使用的障碍物和区域（动态切换）
+    std::vector<Obstacle> obstacles;
+    std::vector<DeathZone> deathZones;
+    std::vector<TransparentZone> transparentZones;
 
     // 定义重生点
     int respawnX = 50;
@@ -345,13 +493,67 @@ int main() {
     putimage(characterX, characterY, &characterRightMask, SRCAND);
     putimage(characterX, characterY, &characterRight, SRCPAINT);
 
+    // 初始化游戏状态
+    bool gameOver = false;
+    bool needRestart = false;
+
+    // 根据当前关卡和时间设置障碍物和区域的函数
+    auto updateLevelData = [&]() {
+        if (currentLevel == 1) {
+            obstacles = obstacles1;
+            deathZones = deathZones1;
+            transparentZones = transparentZones1;
+            mogu = mogu1_1;
+            mogu2 = mogu1_2;
+        } else if (currentLevel == 2) {
+            // 第二关根据白天/黑夜设置不同的障碍物
+            if (isDaytime) {
+                obstacles = obstacles2_daytime;    // 白天：小凸起 + 台阶2 + 台阶3
+            } else {
+                obstacles = obstacles2_nighttime;  // 黑夜：小凸起 + 台阶1
+            }
+
+            // 如果已经吃了勾玉，移除竖障碍
+            if (hasEatenGouyu) {
+                obstacles.erase(
+                    std::remove_if(obstacles.begin(), obstacles.end(),
+                        [](const Obstacle& obs) {
+                            return obs.x == 896 && obs.y == 80; // 竖障碍的位置
+                        }),
+                    obstacles.end()
+                );
+            }
+
+            deathZones = deathZones2;
+            transparentZones = transparentZones2;
+            // 第二关有两个乌鸦
+            // 只在第一次进入第二关时初始化乌鸦位置
+            static bool wuyaInitialized = false;
+            if (!wuyaInitialized) {
+                wuya = wuya2_1;   // 第一个乌鸦
+                wuya2 = wuya2_2;  // 第二个乌鸦
+                wuyaInitialized = true;
+            }
+            wuya.isNeutral = isDaytime;   // 第一个乌鸦：白天中立，夜晚敌对
+            wuya2.isNeutral = isDaytime;  // 第二个乌鸦：白天中立，夜晚敌对
+            // 不重置位置，保持乌鸦当前位置
+        }
+    };
+
+    // 初始化第一关的数据
+    updateLevelData();
+
     // 消息处理循环
     ExMessage msg;
+    BeginBatchDraw();  // 开始批量绘制
     while (true) {
         if (gameOver) {
+            // 游戏结束处理
             mciSendString("close all", nullptr, 0, nullptr);
             cleardevice();
             putimage(0, 0, &evening);
+            
+            // 显示游戏结束文字（使用宽字符以正确显示中文）
             settextcolor(WHITE);
             LOGFONT font;
             gettextstyle(&font);
@@ -361,8 +563,9 @@ int main() {
             settextstyle(&font);
             setbkmode(TRANSPARENT);
             RECT textRect = {width/2 - 100, height/2 - 100, width/2 + 100, height/2 - 60};
-            drawtext(_T("游戏结束"), &textRect, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+            drawtext(_T("GAME OVER!"), &textRect, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
             
+            // 绘制重新开始按钮
             bool buttonHovered = false;
             int buttonSize = 30;
             int buttonX_restart = width/2;
@@ -374,7 +577,9 @@ int main() {
                     int dx = msg_restart.x - buttonX_restart;
                     int dy = msg_restart.y - buttonY_restart;
                     buttonHovered = (dx * dx + dy * dy <= buttonSize * buttonSize);
+                    
                     if (buttonHovered && msg_restart.message == WM_LBUTTONDOWN) {
+                        // 重置游戏状态
                         lives = 3;
                         characterX = 50;
                         characterY = 340;
@@ -389,32 +594,32 @@ int main() {
                         break;
                     }
                 }
+                
                 DrawRestartButton(buttonX_restart, buttonY_restart, buttonSize, buttonHovered);
                 FlushBatchDraw();
+                
                 if (GetAsyncKeyState(VK_ESCAPE)) {
                     return 0;
                 }
+                
                 Sleep(10);
             }
             continue;
         }
 
-        // 处理所有绘制操作
-        BeginBatchDraw();
-
-        // 清空画面并绘制背景
+        // 清空画面并重绘背景（根据关卡选择背景）
         cleardevice();
-        if (isDaytime) {
-            putimage(0, 0, &daytime);
-        } else {
-            putimage(0, 0, &evening);
-        }
-
-        // 更新无敌时间
-        if (isInvincible) {
-            invincibleTimer--;
-            if (invincibleTimer <= 0) {
-                isInvincible = false;
+        if (currentLevel == 1) {
+            if (isDaytime) {
+                putimage(0, 0, &daytime);
+            } else {
+                putimage(0, 0, &evening);
+            }
+        } else if (currentLevel == 2) {
+            if (isDaytime) {
+                putimage(0, 0, &daytime2);
+            } else {
+                putimage(0, 0, &evening2);
             }
         }
 
@@ -423,40 +628,13 @@ int main() {
             // 检测鼠标右键点击，切换背景
             if (msg.message == WM_RBUTTONDOWN) {
                 isDaytime = !isDaytime;
-                cleardevice(); // 清空画面
-                if (isDaytime) {
-                    putimage(0, 0, &daytime); // 显示白天背景
-                    // 检查角色是否在障碍物内部
-                    for (const auto& obstacle : obstacles) {
-                        // 检查是否与障碍物发生碰撞
-                        if (characterX + 60 > obstacle.x && characterX + 10 < obstacle.x + obstacle.width) {
-                            if (characterY + 69 > obstacle.y && characterY < obstacle.y + obstacle.height) {
-                                // 计算到上方和下方的距离
-                                int distToTop = characterY + 69 - obstacle.y;
-                                int distToBottom = (obstacle.y + obstacle.height) - characterY;
-                                
-                                // 选择最近的安全位置
-                                if (distToTop < distToBottom) {
-                                    // 移动到障碍物上方
-                                    characterY = obstacle.y - 69;
-                                    isJumping = false;
-                                    jumpHeight = 0;
-                                    onPlatform = true;
-                                } else {
-                                    // 移动到障碍物下方
-                                    characterY = obstacle.y + obstacle.height;
-                                    isJumping = true;
-                                    jumpHeight = 0;
-                                    onPlatform = false;
-                                }
-                                break;
-                            }
-                        }
-                    }
-                } else {
-                    putimage(0, 0, &evening); // 显示黑夜背景
-                    // 切换到黑夜时取消所有平台碰撞状态
+                // 切换到黑夜时取消所有平台碰撞状态
+                if (!isDaytime) {
                     onPlatform = false;
+                }
+                // 第二关需要根据白天/黑夜更新障碍物
+                if (currentLevel == 2) {
+                    updateLevelData();
                 }
             }
         }
@@ -467,21 +645,60 @@ int main() {
             jumpHeight = jumpSpeed;
         }
 
+        // 全局重力检测 - 检查角色是否应该下落
+        bool shouldFall = true;
+        int currentGroundY = (currentLevel == 1) ? initialY : initialY2;
+
+        // 检查是否站在障碍物上
+        for (const auto& obstacle : obstacles) {
+            if (characterX + 60 > obstacle.x && characterX + 10 < obstacle.x + obstacle.width) {
+                if (characterY + 69 >= obstacle.y && characterY + 69 <= obstacle.y + 5 && characterY < obstacle.y) {
+                    shouldFall = false;
+                    break;
+                }
+            }
+        }
+
+        // 检查是否在地面上
+        if (characterY >= currentGroundY) {
+            shouldFall = false;
+        }
+
+        // 第一关黑夜模式的特殊处理：检查透明区域
+        if (currentLevel == 1 && !isDaytime) {
+            bool inTransparentZone = false;
+            for (const auto& zone : transparentZones) {
+                int characterCenterX = characterX + 35;
+                if (characterCenterX > zone.x && characterCenterX < zone.x + zone.width &&
+                    characterY + 69 > zone.y) {
+                    inTransparentZone = true;
+                    shouldFall = true; // 在透明区域强制下落
+                    break;
+                }
+            }
+        }
+
+        // 如果应该下落且不在跳跃状态，开始下落
+        if (shouldFall && !isJumping) {
+            isJumping = true;
+            jumpHeight = -1; // 给一个小的向下初速度
+        }
+
         // 更新角色位置
         if (isJumping) {
             int nextY = characterY - jumpHeight;  // 计算下一帧的位置
 
-            // 只在白天模式下进行碰撞检测
-            if (isDaytime) {
+            // 白天和第二关黑夜都进行碰撞检测
+            if (isDaytime || (!isDaytime && currentLevel == 2)) {
                 bool canLand = false;
                 for (const auto& obstacle : obstacles) {
                     // 检查是否完全在平台正下方（考虑边缘区域）
-                    bool fullyUnderPlatform = characterX + 30 > obstacle.x && 
+                    bool fullyUnderPlatform = characterX + 30 > obstacle.x &&
                                             characterX + 50 < obstacle.x + obstacle.width;
-                    
+
                     // 只有完全在平台下方时才检查垂直碰撞
                     if (fullyUnderPlatform) {
-                        if (nextY < obstacle.y + obstacle.height && 
+                        if (nextY < obstacle.y + obstacle.height &&
                             characterY + 69 > obstacle.y) {
                             // 被平台挡住，不允许向上移动
                             nextY = characterY;
@@ -489,7 +706,7 @@ int main() {
                             break;
                         }
                     }
-                    
+
                     // 检查是否可以从上方着陆
                     if (characterX + 60 > obstacle.x && characterX + 10 < obstacle.x + obstacle.width) {
                         if (jumpHeight < 0) {  // 下落时
@@ -504,7 +721,7 @@ int main() {
                     }
                 }
             }
-            
+
             // 更新位置
             characterY = nextY;
             jumpHeight -= gravity;  // 应用重力
@@ -516,30 +733,118 @@ int main() {
             bool platformCollision = false;
             
             for (const auto& obstacle : obstacles) {
-                // 水平方向碰撞检测（只检测墙壁，不检测平台）
-                if (obstacle.height > 30) {  // 假设高度大于30的是墙壁
-                    if (characterX + 69 > obstacle.x && characterX < obstacle.x + obstacle.width) {
-                        // 左侧碰撞
-                        if (characterX + 69 > obstacle.x && characterX + 69 < obstacle.x + 20) {
-                            characterX = obstacle.x - 69;
+                // 水平方向碰撞检测（根据关卡区分处理）
+                if (currentLevel == 1) {
+                    // 第一关：只检测墙壁（高度大于30的障碍物）
+                    if (obstacle.height > 30) {
+                        if (characterX + 69 > obstacle.x && characterX < obstacle.x + obstacle.width) {
+                            // 左侧碰撞
+                            if (characterX + 69 > obstacle.x && characterX + 69 < obstacle.x + 20) {
+                                characterX = obstacle.x - 69;
+                            }
+                            // 右侧碰撞
+                            if (characterX < obstacle.x + obstacle.width && characterX > obstacle.x + obstacle.width - 20) {
+                                characterX = obstacle.x + obstacle.width;
+                            }
                         }
-                        // 右侧碰撞
-                        if (characterX < obstacle.x + obstacle.width && characterX > obstacle.x + obstacle.width - 20) {
-                            characterX = obstacle.x + obstacle.width;
+                    }
+                } else if (currentLevel == 2) {
+                    // 第二关：统一的碰撞检测逻辑
+                    // 特殊处理：鸟居左侧竖障碍（需要勾玉才能通过）
+                    if (obstacle.x == 896 && obstacle.y == 80 && !hasEatenGouyu) {
+                        // 这是鸟居左侧的竖障碍，且还没吃勾玉，正常碰撞
+                        bool horizontalOverlap = characterX + 69 > obstacle.x && characterX < obstacle.x + obstacle.width;
+                        bool verticalOverlap = characterY + 69 > obstacle.y && characterY < obstacle.y + obstacle.height;
+
+                        if (horizontalOverlap && verticalOverlap) {
+                            // 计算各个方向的重叠距离
+                            int overlapLeft = characterX + 69 - obstacle.x;
+                            int overlapRight = obstacle.x + obstacle.width - characterX;
+                            int overlapTop = characterY + 69 - obstacle.y;
+                            int overlapBottom = obstacle.y + obstacle.height - characterY;
+
+                            // 找到最小的重叠距离，决定推出方向
+                            int minOverlap = overlapLeft;
+                            if (overlapRight < minOverlap) minOverlap = overlapRight;
+                            if (overlapTop < minOverlap) minOverlap = overlapTop;
+                            if (overlapBottom < minOverlap) minOverlap = overlapBottom;
+
+                            if (minOverlap == overlapLeft && overlapLeft < 20) {
+                                characterX = obstacle.x - 69;
+                            } else if (minOverlap == overlapRight && overlapRight < 20) {
+                                characterX = obstacle.x + obstacle.width;
+                            }
+                        }
+                    } else if (obstacle.x == 896 && obstacle.y == 80 && hasEatenGouyu) {
+                        // 这是鸟居左侧的竖障碍，但已经吃了勾玉，可以穿过，跳过碰撞检测
+                        continue;
+                    } else {
+                        // 其他障碍物的正常碰撞检测
+                        bool horizontalOverlap = characterX + 69 > obstacle.x && characterX < obstacle.x + obstacle.width;
+                        bool verticalOverlap = characterY + 69 > obstacle.y && characterY < obstacle.y + obstacle.height;
+
+                        if (horizontalOverlap && verticalOverlap) {
+                            // 计算各个方向的重叠距离
+                            int overlapLeft = characterX + 69 - obstacle.x;
+                            int overlapRight = obstacle.x + obstacle.width - characterX;
+                            int overlapTop = characterY + 69 - obstacle.y;
+                            int overlapBottom = obstacle.y + obstacle.height - characterY;
+
+                            // 找到最小的重叠距离，决定推出方向
+                            int minOverlap = overlapLeft;
+                            if (overlapRight < minOverlap) minOverlap = overlapRight;
+                            if (overlapTop < minOverlap) minOverlap = overlapTop;
+                            if (overlapBottom < minOverlap) minOverlap = overlapBottom;
+
+                            if (minOverlap == overlapLeft && overlapLeft < 20) {
+                                // 从左侧推出
+                                characterX = obstacle.x - 69;
+                            } else if (minOverlap == overlapRight && overlapRight < 20) {
+                                // 从右侧推出
+                                characterX = obstacle.x + obstacle.width;
+                            } else if (minOverlap == overlapTop && overlapTop < 20) {
+                                // 从上方推出（站在平台上）
+                                characterY = obstacle.y - 69;
+                                if (jumpHeight < 0) {
+                                    isJumping = false;
+                                    jumpHeight = 0;
+                                    platformCollision = true;
+                                }
+                            } else if (minOverlap == overlapBottom && overlapBottom < 20) {
+                                // 从下方推出（撞到平台底部）
+                                characterY = obstacle.y + obstacle.height;
+                                if (jumpHeight > 0) {
+                                    jumpHeight = 0;
+                                }
+                            }
+                        }
+                    }
+
+                    // 检查是否站在平台上（从上方接触）
+                    if (characterX + 60 > obstacle.x && characterX + 10 < obstacle.x + obstacle.width) {
+                        if (characterY + 69 >= obstacle.y && characterY + 69 <= obstacle.y + 5 && characterY < obstacle.y) {
+                            platformCollision = true;
+                            characterY = obstacle.y - 69;
+                            if (jumpHeight < 0) {
+                                isJumping = false;
+                                jumpHeight = 0;
+                            }
                         }
                     }
                 }
 
-                // 检查是否站在平台上（只检查从上方接触）
-                if (characterX + 60 > obstacle.x && characterX + 10 < obstacle.x + obstacle.width) {
-                    if (characterY + 69 >= obstacle.y && characterY + 69 <= obstacle.y + 5 && characterY < obstacle.y) {
-                        platformCollision = true;
-                        characterY = obstacle.y - 69;
-                        if (jumpHeight < 0) {  // 只有在下落时才停止跳跃
-                            isJumping = false;
-                            jumpHeight = 0;
+                // 第一关的平台检测（保持原有逻辑）
+                if (currentLevel == 1) {
+                    if (characterX + 60 > obstacle.x && characterX + 10 < obstacle.x + obstacle.width) {
+                        if (characterY + 69 >= obstacle.y && characterY + 69 <= obstacle.y + 5 && characterY < obstacle.y) {
+                            platformCollision = true;
+                            characterY = obstacle.y - 69;
+                            if (jumpHeight < 0) {  // 只有在下落时才停止跳跃
+                                isJumping = false;
+                                jumpHeight = 0;
+                            }
+                            break;
                         }
-                        break;
                     }
                 }
             }
@@ -547,9 +852,10 @@ int main() {
             // 更新平台状态
             onPlatform = platformCollision;
 
-            // 添加地面碰撞检测
-            if (!onPlatform && characterY >= initialY) {
-                characterY = initialY;
+            // 添加地面碰撞检测（根据关卡使用不同地面高度）
+            int currentGroundY = (currentLevel == 1) ? initialY : initialY2;
+            if (!onPlatform && characterY >= currentGroundY) {
+                characterY = currentGroundY;
                 isJumping = false;
                 jumpHeight = 0;
                 onPlatform = true;
@@ -575,15 +881,112 @@ int main() {
                     jumpHeight = -2; // 给一个小的向下的初速度，使下落更自然
                 }
             } else {
-                // 不在透明区域时，检查是否在地面
-                if (characterY >= initialY) {
-                    characterY = initialY;
+                // 不在透明区域时，检查障碍物碰撞和地面
+                bool platformCollision = false;
+
+                // 第二关在黑夜模式下也需要检查障碍物碰撞
+                if (currentLevel == 2) {
+                    for (const auto& obstacle : obstacles) {
+                        // 第二关：统一的碰撞检测逻辑（与白天相同）
+                        // 特殊处理：鸟居左侧竖障碍（需要勾玉才能通过）
+                        if (obstacle.x == 896 && obstacle.y == 80 && !hasEatenGouyu) {
+                            // 这是鸟居左侧的竖障碍，且还没吃勾玉，正常碰撞
+                            bool horizontalOverlap = characterX + 69 > obstacle.x && characterX < obstacle.x + obstacle.width;
+                            bool verticalOverlap = characterY + 69 > obstacle.y && characterY < obstacle.y + obstacle.height;
+
+                            if (horizontalOverlap && verticalOverlap) {
+                                // 计算各个方向的重叠距离
+                                int overlapLeft = characterX + 69 - obstacle.x;
+                                int overlapRight = obstacle.x + obstacle.width - characterX;
+                                int overlapTop = characterY + 69 - obstacle.y;
+                                int overlapBottom = obstacle.y + obstacle.height - characterY;
+
+                                // 找到最小的重叠距离，决定推出方向
+                                int minOverlap = overlapLeft;
+                                if (overlapRight < minOverlap) minOverlap = overlapRight;
+                                if (overlapTop < minOverlap) minOverlap = overlapTop;
+                                if (overlapBottom < minOverlap) minOverlap = overlapBottom;
+
+                                if (minOverlap == overlapLeft && overlapLeft < 20) {
+                                    characterX = obstacle.x - 69;
+                                } else if (minOverlap == overlapRight && overlapRight < 20) {
+                                    characterX = obstacle.x + obstacle.width;
+                                }
+                            }
+                        } else if (obstacle.x == 896 && obstacle.y == 80 && hasEatenGouyu) {
+                            // 这是鸟居左侧的竖障碍，但已经吃了勾玉，可以穿过，跳过碰撞检测
+                            continue;
+                        } else {
+                            // 其他障碍物的正常碰撞检测
+                            bool horizontalOverlap = characterX + 69 > obstacle.x && characterX < obstacle.x + obstacle.width;
+                            bool verticalOverlap = characterY + 69 > obstacle.y && characterY < obstacle.y + obstacle.height;
+
+                            if (horizontalOverlap && verticalOverlap) {
+                                // 计算各个方向的重叠距离
+                                int overlapLeft = characterX + 69 - obstacle.x;
+                                int overlapRight = obstacle.x + obstacle.width - characterX;
+                                int overlapTop = characterY + 69 - obstacle.y;
+                                int overlapBottom = obstacle.y + obstacle.height - characterY;
+
+                                // 找到最小的重叠距离，决定推出方向
+                                int minOverlap = overlapLeft;
+                                if (overlapRight < minOverlap) minOverlap = overlapRight;
+                                if (overlapTop < minOverlap) minOverlap = overlapTop;
+                                if (overlapBottom < minOverlap) minOverlap = overlapBottom;
+
+                                if (minOverlap == overlapLeft && overlapLeft < 20) {
+                                    // 从左侧推出
+                                    characterX = obstacle.x - 69;
+                                } else if (minOverlap == overlapRight && overlapRight < 20) {
+                                    // 从右侧推出
+                                    characterX = obstacle.x + obstacle.width;
+                                } else if (minOverlap == overlapTop && overlapTop < 20) {
+                                    // 从上方推出（站在平台上）
+                                    characterY = obstacle.y - 69;
+                                    if (jumpHeight < 0) {
+                                        isJumping = false;
+                                        jumpHeight = 0;
+                                        platformCollision = true;
+                                    }
+                                } else if (minOverlap == overlapBottom && overlapBottom < 20) {
+                                    // 从下方推出（撞到平台底部）
+                                    characterY = obstacle.y + obstacle.height;
+                                    if (jumpHeight > 0) {
+                                        jumpHeight = 0;
+                                    }
+                                }
+                            }
+                        }
+
+                        // 检查是否站在平台上（从上方接触）
+                        if (characterX + 60 > obstacle.x && characterX + 10 < obstacle.x + obstacle.width) {
+                            if (characterY + 69 >= obstacle.y && characterY + 69 <= obstacle.y + 5 && characterY < obstacle.y) {
+                                platformCollision = true;
+                                characterY = obstacle.y - 69;
+                                if (jumpHeight < 0) {
+                                    isJumping = false;
+                                    jumpHeight = 0;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // 检查是否在地面（根据关卡使用不同地面高度）
+                int currentGroundY = (currentLevel == 1) ? initialY : initialY2;
+                if (!platformCollision && characterY >= currentGroundY) {
+                    characterY = currentGroundY;
                     isJumping = false;
                     jumpHeight = 0;
                     onPlatform = true;
-                } else if (!isJumping) {
+                } else if (!platformCollision && !isJumping) {
                     isJumping = true;
                     jumpHeight = 0;
+                }
+
+                // 更新平台状态
+                if (platformCollision) {
+                    onPlatform = true;
                 }
             }
 
@@ -609,7 +1012,7 @@ int main() {
                             
                             // 获取最近的重生点
                             int newRespawnX, newRespawnY;
-                            GetNearestRespawnPoint(characterX, characterY, facingRight, newRespawnX, newRespawnY);
+                            GetNearestRespawnPoint(characterX, characterY, facingRight, newRespawnX, newRespawnY, currentLevel);
                             characterX = newRespawnX;
                             characterY = newRespawnY;
                             facingRight = !facingRight;  // 重生后朝向相反
@@ -624,77 +1027,85 @@ int main() {
                             if (strcmp(status, "playing") != 0) {
                                 PlayBackgroundMusic();
                             }
-                            break;  // 跳过当前帧的剩余处理
+                            continue;  // 跳过当前帧的剩余处理
                         } else {
                             gameOver = true;
-                            break;
+                            continue;
                         }
                     }
                 }
+            }
 
-                // 蘑菇怪碰撞检测
-                if (!gameOver) {
-                    // 检测与第一个蘑菇怪的碰撞
-                    if (characterX < mogu.x + mogu.width &&
-                        characterX + 69 > mogu.x &&
-                        characterY < mogu.y + mogu.height &&
-                        characterY + 69 > mogu.y) {
-                        
-                        lives--;
-                        if (lives > 0) {
-                            isInvincible = true;
-                            invincibleTimer = INVINCIBLE_DURATION;
-                            int newRespawnX, newRespawnY;
-                            GetNearestRespawnPoint(characterX, characterY, facingRight, newRespawnX, newRespawnY);
-                            characterX = newRespawnX;
-                            characterY = newRespawnY;
-                            facingRight = !facingRight;
-                            isJumping = false;
-                            jumpHeight = 0;
-                            PlayCharacterVoice();
-                            char status[256];
-                            mciSendString("status bgm mode", status, sizeof(status), nullptr);
-                            if (strcmp(status, "playing") != 0) {
-                                PlayBackgroundMusic();
-                            }
-                        } else {
-                            gameOver = true;
-                            break;
+            // 蘑菇怪碰撞检测 (只在黑夜且非无敌状态且第一关)
+            if (!isInvincible && !isDaytime && currentLevel == 1) {
+                // 检测与第一个蘑菇怪的碰撞
+                if (characterX < mogu.x + mogu.width &&
+                    characterX + 69 > mogu.x &&
+                    characterY < mogu.y + mogu.height &&
+                    characterY + 69 > mogu.y) {
+                    
+                    lives--;
+                    if (lives > 0) {
+                        isInvincible = true;
+                        invincibleTimer = INVINCIBLE_DURATION;
+                        int newRespawnX, newRespawnY;
+                        GetNearestRespawnPoint(characterX, characterY, facingRight, newRespawnX, newRespawnY, currentLevel);
+                        characterX = newRespawnX;
+                        characterY = newRespawnY;
+                        facingRight = !facingRight;
+                        isJumping = false;
+                        jumpHeight = 0;
+                        PlayCharacterVoice();
+                        char status[256];
+                        mciSendString("status bgm mode", status, sizeof(status), nullptr);
+                        if (strcmp(status, "playing") != 0) {
+                            PlayBackgroundMusic();
                         }
+                    } else {
+                        gameOver = true;
+                        continue;
                     }
+                }
 
-                    // 检测与第二个蘑菇怪的碰撞
-                    if (characterX < mogu2.x + mogu2.width &&
-                        characterX + 69 > mogu2.x &&
-                        characterY < mogu2.y + mogu2.height &&
-                        characterY + 69 > mogu2.y) {
-                        
-                        lives--;
-                        if (lives > 0) {
-                            isInvincible = true;
-                            invincibleTimer = INVINCIBLE_DURATION;
-                            int newRespawnX, newRespawnY;
-                            GetNearestRespawnPoint(characterX, characterY, facingRight, newRespawnX, newRespawnY);
-                            characterX = newRespawnX;
-                            characterY = newRespawnY;
-                            facingRight = !facingRight;
-                            isJumping = false;
-                            jumpHeight = 0;
-                            PlayCharacterVoice();
-                            char status[256];
-                            mciSendString("status bgm mode", status, sizeof(status), nullptr);
-                            if (strcmp(status, "playing") != 0) {
-                                PlayBackgroundMusic();
-                            }
-                        } else {
-                            gameOver = true;
-                            break;
+                // 检测与第二个蘑菇怪的碰撞
+                if (characterX < mogu2.x + mogu2.width &&
+                    characterX + 69 > mogu2.x &&
+                    characterY < mogu2.y + mogu2.height &&
+                    characterY + 69 > mogu2.y) {
+                    
+                    lives--;
+                    if (lives > 0) {
+                        isInvincible = true;
+                        invincibleTimer = INVINCIBLE_DURATION;
+                        int newRespawnX, newRespawnY;
+                        GetNearestRespawnPoint(characterX, characterY, facingRight, newRespawnX, newRespawnY, currentLevel);
+                        characterX = newRespawnX;
+                        characterY = newRespawnY;
+                        facingRight = !facingRight;
+                        isJumping = false;
+                        jumpHeight = 0;
+                        PlayCharacterVoice();
+                        char status[256];
+                        mciSendString("status bgm mode", status, sizeof(status), nullptr);
+                        if (strcmp(status, "playing") != 0) {
+                            PlayBackgroundMusic();
                         }
+                    } else {
+                        gameOver = true;
+                        continue;
                     }
                 }
             }
         }
 
+        // 更新无敌时间
+        if (isInvincible) {
+            invincibleTimer--;
+            if (invincibleTimer <= 0) {
+                isInvincible = false;
+            }
+        }
+        
         // 检查F1键状态（切换调试模式）
         if (GetAsyncKeyState(VK_F1) & 0x8000) {
             if (!F1Pressed) {  // 防止持续按住时重复切换
@@ -708,10 +1119,29 @@ int main() {
         // 在调试模式下显示障碍物和死亡区域
         if (showObstacles) {
             for (const auto& obstacle : obstacles) {
+                // 特殊处理：如果是鸟居左侧竖障碍且已经吃了勾玉，则不显示
+                if (currentLevel == 2 && obstacle.x == 896 && obstacle.y == 80 && hasEatenGouyu) {
+                    continue; // 跳过绘制这个障碍物
+                }
+
                 setfillcolor(obstacle.color);
                 solidrectangle(obstacle.x, obstacle.y, obstacle.x + obstacle.width, obstacle.y + obstacle.height);
+
+                // 显示障碍物信息
+                settextcolor(RGB(255, 255, 255));
+                setbkmode(TRANSPARENT);
+                TCHAR obstacleInfo[100];
+                _stprintf(obstacleInfo, _T("H:%d"), obstacle.height);
+                outtextxy(obstacle.x, obstacle.y - 15, obstacleInfo);
             }
-            
+
+            // 显示角色位置信息
+            settextcolor(RGB(255, 255, 0));
+            setbkmode(TRANSPARENT);
+            TCHAR characterInfo[100];
+            _stprintf(characterInfo, _T("X:%d Y:%d"), characterX, characterY);
+            outtextxy(characterX, characterY - 30, characterInfo);
+
             // 显示死亡区域和透明区域
             if (!isDaytime) {
                 // 显示死亡区域（红色）
@@ -719,7 +1149,7 @@ int main() {
                 for (const auto& zone : deathZones) {
                     solidrectangle(zone.x, zone.y, zone.x + zone.width, zone.y + zone.height);
                 }
-                
+
                 // 显示透明区域（半透明的蓝色）
                 setfillcolor(RGB(0, 255, 255));
                 for (const auto& zone : transparentZones) {
@@ -740,53 +1170,121 @@ int main() {
             }
         }
         
-        // 在绘制角色之前，根据当前模式绘制鸟居或豆腐
-        if (isDaytime) {
-            // 在白天模式下显示鸟居（在二楼台阶上的右侧）
-            putimage(820 + 140, 320 - 50, &niaoujuMask, SRCAND);  // 放在台阶右侧
-            putimage(820 + 140, 320 - 50, &niaoju, SRCPAINT);
-            
-            // 如果豆腐已经被吃掉，检查是否在鸟居附近
-            if (hasEatenTofu) {
-                // 检查角色是否在鸟居附近
-                if (characterX + 69 > 820 + 140 - 30 && characterX < 820 + 140 + 80 &&
-                    characterY + 69 > 320 - 50 - 30 && characterY < 320 - 50 + 80) {
-                    // 显示F键提示
-                    showFKey = true;
+        // 根据关卡绘制不同的游戏元素
+        if (currentLevel == 1) {
+            // 第一关：鸟居和豆腐系统
+            if (isDaytime) {
+                // 在白天模式下显示鸟居（在二楼台阶上的右侧）
+                putimage(820 + 140, 320 - 50, &niaoujuMask, SRCAND);  // 放在台阶右侧
+                putimage(820 + 140, 320 - 50, &niaoju, SRCPAINT);
+
+                // 如果豆腐已经被吃掉，检查是否在鸟居附近
+                if (hasEatenTofu) {
+                    // 检查角色是否在鸟居附近
+                    if (characterX + 69 > 820 + 140 - 30 && characterX < 820 + 140 + 80 &&
+                        characterY + 69 > 320 - 50 - 30 && characterY < 320 - 50 + 80) {
+                        // 显示F键提示
+                        showFKey = true;
+                    } else {
+                        showFKey = false;
+                    }
+
+                    // 如果显示F键且按下F键
+                    if (showFKey && GetAsyncKeyState('F') & 0x8000) {
+                        // 第一关通关，进入第二关
+                        currentLevel = 2;
+                        characterX = 53;  // 第二关角色初始位置
+                        characterY = 445;
+                        facingRight = true;
+                        isJumping = false;
+                        jumpHeight = 0;
+                        hasEatenTofu = false;
+                        hasEatenGouyu = false;  // 重置第二关的收集状态
+                        gateOpen = false;       // 重置机关门状态
+                        isDaytime = true;       // 重置为白天
+                        showFKey = false;
+                        updateLevelData();      // 更新关卡数据
+                        MessageBoxW(GetHWnd(), L"进入第二关！", L"提示", MB_OK);
+                    }
+                }
+            } else {
+                // 在黑夜模式下显示豆腐（如果还没有被吃掉）
+                if (!hasEatenTofu) {
+                    putimage(820 + 140, 320 + 30, &tofuMask, SRCAND);  // 放在台阶下方
+                    putimage(820 + 140, 320 + 30, &tofu, SRCPAINT);
+
+                    // 检查角色是否接触到豆腐
+                    if (characterX + 69 > 820 + 140 - 20 && characterX < 820 + 140 + 70 &&
+                        characterY + 69 > 320 + 30 - 20 && characterY < 320 + 30 + 70) {
+                        hasEatenTofu = true;  // 豆腐被吃掉
+                    }
+                }
+                // 在黑夜模式下强制关闭F键显示
+                showFKey = false;
+            }
+        } else if (currentLevel == 2) {
+            // 第二关：勾玉和豆腐系统
+            if (isDaytime) {
+                // 第二关白天模式：显示豆腐在第三台阶上
+                if (!hasEatenTofu) {
+                    putimage(71, 131, &tofuMask, SRCAND);  // 放在台阶3上方
+                    putimage(71, 131, &tofu, SRCPAINT);
+
+                    // 检查角色是否接触到豆腐
+                    if (characterX + 69 > 71 - 20 && characterX < 71 + 70 &&
+                        characterY + 69 > 131 - 20 && characterY < 131 + 70) {
+                        hasEatenTofu = true;  // 豆腐被吃掉
+                    }
+                }
+
+                // 第二关白天模式：显示鸟居在台阶4右侧
+                putimage(925, 81, &niaoujuMask, SRCAND);  // 放在台阶4右侧
+                putimage(925, 81, &niaoju, SRCPAINT);
+
+                // 通关条件：只需要吃了豆腐，在鸟居附近按F键
+                if (hasEatenTofu) {
+                    // 检查角色是否在鸟居附近
+                    if (characterX + 69 > 925 - 30 && characterX < 925 + 80 &&
+                        characterY + 69 > 81 - 30 && characterY < 81 + 80) {
+                        showFKey = true;
+                        if (GetAsyncKeyState('F') & 0x8000) {
+                            MessageBoxW(GetHWnd(), L"恭喜通关全部关卡！", L"提示", MB_OK);
+                            return 0;
+                        }
+                    } else {
+                        showFKey = false;
+                    }
                 } else {
                     showFKey = false;
                 }
+            } else {
+                // 第二关夜晚模式：显示勾玉在台阶3上面（和豆腐同一位置）
+                if (!hasEatenGouyu) {
+                    putimage(500, 216, &gouyuMask, SRCAND);  // 放在台阶3上方（和豆腐同一位置）
+                    putimage(500, 216, &gouyu, SRCPAINT);
 
-                // 如果显示F键且按下F键
-                if (showFKey && GetAsyncKeyState('F') & 0x8000) {
-                    // 进入下一关
-                    MessageBoxW(GetHWnd(), L"恭喜通关！", L"提示", MB_OK);
-                    return 0;  // 或者这里可以加载下一关的逻辑
+                    // 检查角色是否接触到勾玉（和豆腐相同的检测方式）
+                    if (characterX + 69 > 500 - 20 && characterX < 500 + 70 &&
+                        characterY + 69 > 216 - 20 && characterY < 216 + 70) {
+                        hasEatenGouyu = true;  // 勾玉被吃掉
+                    }
                 }
+                showFKey = false;
             }
-        } else {
-            // 在黑夜模式下显示豆腐（如果还没有被吃掉）
-            if (!hasEatenTofu) {
-                putimage(820 + 140, 320 + 30, &tofuMask, SRCAND);  // 放在台阶下方
-                putimage(820 + 140, 320 + 30, &tofu, SRCPAINT);
-                
-                // 检查角色是否接触到豆腐
-                if (characterX + 69 > 820 + 140 - 20 && characterX < 820 + 140 + 70 &&
-                    characterY + 69 > 320 + 30 - 20 && characterY < 320 + 30 + 70) {
-                    hasEatenTofu = true;  // 豆腐被吃掉
-                    // 可以在这里添加音效或其他效果
-                }
-            }
-            // 在黑夜模式下强制关闭F键显示
-            showFKey = false;
         }
 
         // 如果需要显示F键提示（只在白天模式下）
         if (showFKey && isDaytime) {
             settextcolor(RGB(255, 255, 255));  // 白色文字
-            settextstyle(20, 0, "宋体");       // 缩小字体大小
             setbkmode(TRANSPARENT);            // 设置文字背景透明
-            outtextxy(820 + 140 + 15, 320 - 70, "F");  // 调整位置到鸟居正上方
+
+            if (currentLevel == 1) {
+                // 第一关：在鸟居上方显示F键
+                outtextxy(820 + 140 + 15, 320 - 70, _T("F"));
+            } else if (currentLevel == 2) {
+                // 第二关：在鸟居上方显示F键
+                outtextxy(910 + 15, 150 - 70, _T("F"));
+            }
         }
 
         // 根据朝向绘制角色（在无敌状态下闪烁）
@@ -800,8 +1298,8 @@ int main() {
             }
         }
 
-        // 更新和绘制蘑菇怪 (只在黑夜)
-        if (!isDaytime) {
+        // 更新和绘制蘑菇怪 (只在黑夜且第一关)
+        if (!isDaytime && currentLevel == 1) {
             // 更新第一个蘑菇怪位置
             if (mogu.facingRight) {
                 mogu.x += mogu.moveSpeed;
@@ -851,6 +1349,294 @@ int main() {
             }
         }
 
+        // 更新和绘制乌鸦 (只在第二关)
+        if (currentLevel == 2) {
+            if (isDaytime) {
+                // 白天：乌鸦为中立状态，静止不动，作为障碍物平台
+                putimage(wuya.x, wuya.y, &wuya.imgDaytimeMask, SRCAND);
+                putimage(wuya.x, wuya.y, &wuya.imgDaytime, SRCPAINT);
+
+                // 白天乌鸦作为障碍物的碰撞检测（类似小凸起）
+                bool horizontalOverlap = characterX + 69 > wuya.x && characterX < wuya.x + wuya.width;
+                bool verticalOverlap = characterY + 69 > wuya.y && characterY < wuya.y + wuya.height;
+
+                // 检查靠近自动上去的功能
+                bool nearWuya = horizontalOverlap && characterY + 69 >= wuya.y - 10 && characterY + 69 <= wuya.y + 10;
+                if (nearWuya && !isJumping) {
+                    // 靠近时自动上去
+                    characterY = wuya.y - 69;
+                    isJumping = false;
+                    jumpHeight = 0;
+                }
+
+                // 正常的障碍物碰撞检测
+                if (horizontalOverlap && verticalOverlap) {
+                    // 计算各个方向的重叠距离
+                    int overlapLeft = characterX + 69 - wuya.x;
+                    int overlapRight = wuya.x + wuya.width - characterX;
+                    int overlapTop = characterY + 69 - wuya.y;
+                    int overlapBottom = wuya.y + wuya.height - characterY;
+
+                    // 找到最小的重叠距离，决定推出方向
+                    int minOverlap = overlapLeft;
+                    if (overlapRight < minOverlap) minOverlap = overlapRight;
+                    if (overlapTop < minOverlap) minOverlap = overlapTop;
+                    if (overlapBottom < minOverlap) minOverlap = overlapBottom;
+
+                    if (minOverlap == overlapLeft && overlapLeft < 20) {
+                        // 从左侧推出
+                        characterX = wuya.x - 69;
+                    } else if (minOverlap == overlapRight && overlapRight < 20) {
+                        // 从右侧推出
+                        characterX = wuya.x + wuya.width;
+                    } else if (minOverlap == overlapTop && overlapTop < 20) {
+                        // 从上方推出（站在乌鸦上）
+                        characterY = wuya.y - 69;
+                        if (jumpHeight < 0) {
+                            isJumping = false;
+                            jumpHeight = 0;
+                        }
+                    } else if (minOverlap == overlapBottom && overlapBottom < 20) {
+                        // 从下方推出（撞到乌鸦底部）
+                        characterY = wuya.y + wuya.height;
+                        if (jumpHeight > 0) {
+                            jumpHeight = 0;
+                        }
+                    }
+                }
+
+                // 检查是否站在乌鸦上（从上方接触）
+                if (characterX + 60 > wuya.x && characterX + 10 < wuya.x + wuya.width) {
+                    if (characterY + 69 >= wuya.y && characterY + 69 <= wuya.y + 5 && characterY < wuya.y) {
+                        characterY = wuya.y - 69;
+                        if (jumpHeight < 0) {
+                            isJumping = false;
+                            jumpHeight = 0;
+                        }
+                    }
+                }
+            } else {
+                // 夜晚：乌鸦为敌对状态
+                // 检查是否在同一层（地面层）
+                bool onSameLevel = (characterY + 69 >= 390 - 20 && characterY + 69 <= 390 + 20) &&
+                                   (wuya.y + wuya.height >= 390 - 20 && wuya.y + wuya.height <= 390 + 20);
+
+                // 检查是否能看到玩家（视野范围内且同一层）
+                int distanceToPlayer = abs(characterX - wuya.x);
+                bool canSeePlayer = onSameLevel && distanceToPlayer <= 200; // 视野范围200像素
+
+                if (canSeePlayer) {
+                    // 看到玩家时，朝玩家方向移动
+                    if (characterX < wuya.x) {
+                        wuya.facingRight = false;
+                        wuya.x -= wuya.moveSpeed;
+                        if (wuya.x < wuya.minX) {
+                            wuya.x = wuya.minX;
+                        }
+                    } else if (characterX > wuya.x + wuya.width) {
+                        wuya.facingRight = true;
+                        wuya.x += wuya.moveSpeed;
+                        if (wuya.x + wuya.width > wuya.maxX) {
+                            wuya.x = wuya.maxX - wuya.width;
+                        }
+                    }
+                } else {
+                    // 没看到玩家时，正常巡逻
+                    if (wuya.facingRight) {
+                        wuya.x += wuya.moveSpeed;
+                        if (wuya.x + wuya.width >= wuya.maxX) {
+                            wuya.x = wuya.maxX - wuya.width;
+                            wuya.facingRight = false;
+                        }
+                    } else {
+                        wuya.x -= wuya.moveSpeed;
+                        if (wuya.x <= wuya.minX) {
+                            wuya.x = wuya.minX;
+                            wuya.facingRight = true;
+                        }
+                    }
+                }
+
+                // 碰撞检测（只在同一层且非无敌状态）
+                if (onSameLevel && !isInvincible) {
+                    if (characterX < wuya.x + wuya.width &&
+                        characterX + 69 > wuya.x &&
+                        characterY < wuya.y + wuya.height &&
+                        characterY + 69 > wuya.y) {
+
+                        lives--;
+                        if (lives > 0) {
+                            isInvincible = true;
+                            invincibleTimer = INVINCIBLE_DURATION;
+                            int newRespawnX, newRespawnY;
+                            GetNearestRespawnPoint(characterX, characterY, facingRight, newRespawnX, newRespawnY, currentLevel);
+                            characterX = newRespawnX;
+                            characterY = newRespawnY;
+                            facingRight = !facingRight;
+                            isJumping = false;
+                            jumpHeight = 0;
+                            PlayCharacterVoice();
+                        } else {
+                            gameOver = true;
+                            continue;
+                        }
+                    }
+                }
+
+                // 绘制夜晚的第一个乌鸦
+                if (wuya.facingRight) {
+                    putimage(wuya.x, wuya.y, &wuya.imgNightRightMask, SRCAND);
+                    putimage(wuya.x, wuya.y, &wuya.imgNightRight, SRCPAINT);
+                } else {
+                    putimage(wuya.x, wuya.y, &wuya.imgNightLeftMask, SRCAND);
+                    putimage(wuya.x, wuya.y, &wuya.imgNightLeft, SRCPAINT);
+                }
+            }
+
+            // 第二个乌鸦的逻辑（与第一个相同）
+            if (isDaytime) {
+                // 白天：第二个乌鸦为中立状态，静止不动，作为障碍物平台
+                putimage(wuya2.x, wuya2.y, &wuya2.imgDaytimeMask, SRCAND);
+                putimage(wuya2.x, wuya2.y, &wuya2.imgDaytime, SRCPAINT);
+
+                // 白天第二个乌鸦作为障碍物的碰撞检测（类似小凸起）
+                bool horizontalOverlap2 = characterX + 69 > wuya2.x && characterX < wuya2.x + wuya2.width;
+                bool verticalOverlap2 = characterY + 69 > wuya2.y && characterY < wuya2.y + wuya2.height;
+
+                // 检查靠近自动上去的功能
+                bool nearWuya2 = horizontalOverlap2 && characterY + 69 >= wuya2.y - 10 && characterY + 69 <= wuya2.y + 10;
+                if (nearWuya2 && !isJumping) {
+                    // 靠近时自动上去
+                    characterY = wuya2.y - 69;
+                    isJumping = false;
+                    jumpHeight = 0;
+                }
+
+                // 正常的障碍物碰撞检测
+                if (horizontalOverlap2 && verticalOverlap2) {
+                    // 计算各个方向的重叠距离
+                    int overlapLeft2 = characterX + 69 - wuya2.x;
+                    int overlapRight2 = wuya2.x + wuya2.width - characterX;
+                    int overlapTop2 = characterY + 69 - wuya2.y;
+                    int overlapBottom2 = wuya2.y + wuya2.height - characterY;
+
+                    // 找到最小的重叠距离，决定推出方向
+                    int minOverlap2 = overlapLeft2;
+                    if (overlapRight2 < minOverlap2) minOverlap2 = overlapRight2;
+                    if (overlapTop2 < minOverlap2) minOverlap2 = overlapTop2;
+                    if (overlapBottom2 < minOverlap2) minOverlap2 = overlapBottom2;
+
+                    if (minOverlap2 == overlapLeft2 && overlapLeft2 < 20) {
+                        // 从左侧推出
+                        characterX = wuya2.x - 69;
+                    } else if (minOverlap2 == overlapRight2 && overlapRight2 < 20) {
+                        // 从右侧推出
+                        characterX = wuya2.x + wuya2.width;
+                    } else if (minOverlap2 == overlapTop2 && overlapTop2 < 20) {
+                        // 从上方推出（站在乌鸦上）
+                        characterY = wuya2.y - 69;
+                        if (jumpHeight < 0) {
+                            isJumping = false;
+                            jumpHeight = 0;
+                        }
+                    } else if (minOverlap2 == overlapBottom2 && overlapBottom2 < 20) {
+                        // 从下方推出（撞到乌鸦底部）
+                        characterY = wuya2.y + wuya2.height;
+                        if (jumpHeight > 0) {
+                            jumpHeight = 0;
+                        }
+                    }
+                }
+
+                // 检查是否站在第二个乌鸦上（从上方接触）
+                if (characterX + 60 > wuya2.x && characterX + 10 < wuya2.x + wuya2.width) {
+                    if (characterY + 69 >= wuya2.y && characterY + 69 <= wuya2.y + 5 && characterY < wuya2.y) {
+                        characterY = wuya2.y - 69;
+                        if (jumpHeight < 0) {
+                            isJumping = false;
+                            jumpHeight = 0;
+                        }
+                    }
+                }
+            } else {
+                // 夜晚：第二个乌鸦为敌对状态
+                // 检查是否在同一层（根据第二个乌鸦的高度层）
+                bool onSameLevel2 = (characterY + 69 >= 235 - 20 && characterY + 69 <= 235 + 20) &&
+                                   (wuya2.y + wuya2.height >= 235 - 20 && wuya2.y + wuya2.height <= 235 + 20);
+
+                // 检查是否能看到玩家（视野范围内且同一层）
+                int distanceToPlayer2 = abs(characterX - wuya2.x);
+                bool canSeePlayer2 = onSameLevel2 && distanceToPlayer2 <= 200; // 视野范围200像素
+
+                if (canSeePlayer2) {
+                    // 看到玩家时，朝玩家方向移动
+                    if (characterX < wuya2.x) {
+                        wuya2.facingRight = false;
+                        wuya2.x -= wuya2.moveSpeed;
+                        if (wuya2.x < wuya2.minX) {
+                            wuya2.x = wuya2.minX;
+                        }
+                    } else if (characterX > wuya2.x + wuya2.width) {
+                        wuya2.facingRight = true;
+                        wuya2.x += wuya2.moveSpeed;
+                        if (wuya2.x + wuya2.width > wuya2.maxX) {
+                            wuya2.x = wuya2.maxX - wuya2.width;
+                        }
+                    }
+                } else {
+                    // 没看到玩家时，正常巡逻
+                    if (wuya2.facingRight) {
+                        wuya2.x += wuya2.moveSpeed;
+                        if (wuya2.x + wuya2.width >= wuya2.maxX) {
+                            wuya2.x = wuya2.maxX - wuya2.width;
+                            wuya2.facingRight = false;
+                        }
+                    } else {
+                        wuya2.x -= wuya2.moveSpeed;
+                        if (wuya2.x <= wuya2.minX) {
+                            wuya2.x = wuya2.minX;
+                            wuya2.facingRight = true;
+                        }
+                    }
+                }
+
+                // 碰撞检测（只在同一层且非无敌状态）
+                if (onSameLevel2 && !isInvincible) {
+                    if (characterX < wuya2.x + wuya2.width &&
+                        characterX + 69 > wuya2.x &&
+                        characterY < wuya2.y + wuya2.height &&
+                        characterY + 69 > wuya2.y) {
+
+                        lives--;
+                        if (lives > 0) {
+                            isInvincible = true;
+                            invincibleTimer = INVINCIBLE_DURATION;
+                            int newRespawnX, newRespawnY;
+                            GetNearestRespawnPoint(characterX, characterY, facingRight, newRespawnX, newRespawnY, currentLevel);
+                            characterX = newRespawnX;
+                            characterY = newRespawnY;
+                            facingRight = !facingRight;
+                            isJumping = false;
+                            jumpHeight = 0;
+                            PlayCharacterVoice();
+                        } else {
+                            gameOver = true;
+                            continue;
+                        }
+                    }
+                }
+
+                // 绘制夜晚的第二个乌鸦
+                if (wuya2.facingRight) {
+                    putimage(wuya2.x, wuya2.y, &wuya2.imgNightRightMask, SRCAND);
+                    putimage(wuya2.x, wuya2.y, &wuya2.imgNightRight, SRCPAINT);
+                } else {
+                    putimage(wuya2.x, wuya2.y, &wuya2.imgNightLeftMask, SRCAND);
+                    putimage(wuya2.x, wuya2.y, &wuya2.imgNightLeft, SRCPAINT);
+                }
+            }
+        }
+
         FlushBatchDraw();  // 刷新绘制内容
 
         // 检测键盘输入（A 和 D 控制左右移动）
@@ -876,10 +1662,8 @@ int main() {
             break;
         }
 
-        // 避免 CPU 占用过高
-        Sleep(10);
+        Sleep(10);  // 控制帧率
     }
-
     EndBatchDraw();  // 结束批量绘制
     // 在游戏结束时关闭所有音频
     mciSendString("close all", nullptr, 0, nullptr);
